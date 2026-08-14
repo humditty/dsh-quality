@@ -1,0 +1,5 @@
+node_modules/
+dist/
+coverage/
+quality-report.md
+.DS_Store

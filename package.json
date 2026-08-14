@@ -1,0 +1,24 @@
+{
+  "name": "dsh-quality",
+  "version": "0.1.0",
+  "description": "Quality gate for coding agents running inside DeepSeek Harness.",
+  "type": "module",
+  "bin": {
+    "dsh-quality": "dist/src/cli.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "npm run build && node --test dist/tests/*.test.js",
+    "test:unit": "npm run build && node --test dist/tests/*.test.js",
+    "dev": "tsx src/cli.ts"
+  },
+  "dependencies": {
+    "yaml": "^2.6.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

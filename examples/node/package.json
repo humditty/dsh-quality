@@ -1,0 +1,7 @@
+{
+  "name": "dsh-quality-node-example",
+  "private": true,
+  "scripts": {
+    "test": "node --test test.js"
+  }
+}

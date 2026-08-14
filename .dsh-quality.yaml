@@ -1,0 +1,21 @@
+version: 1
+
+trigger:
+  on_code_change: true
+
+checkers:
+  test:
+    enabled: true
+    timeout: 120
+
+policy:
+  fail_on_test_failure: true
+  fail_on_checker_error: true
+
+report:
+  console: true
+  markdown: true
+
+output:
+  max_stdout_chars: 10000
+  max_stderr_chars: 10000
