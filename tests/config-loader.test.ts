@@ -28,7 +28,9 @@ test("loadConfig reads yaml seconds and applies overrides", async () => {
     "gate:",
     "  auto_execute_missing_evidence: false",
     "repair:",
-    "  max_steers_per_change_set: 5",
+    "  max_attempts: 5",
+    "feedback:",
+    "  max_chars: 200",
     ""
   ].join("\n"));
   const config = await loadConfig(root, { timeout: 5_000, markdownPath: "custom.md" });
@@ -39,5 +41,6 @@ test("loadConfig reads yaml seconds and applies overrides", async () => {
   assert.equal(config.report.markdownPath, "custom.md");
   assert.equal(config.output.maxStdoutChars, 20);
   assert.equal(config.gate.autoExecuteMissingEvidence, false);
-  assert.equal(config.repair.maxSteersPerChangeSet, 5);
+  assert.equal(config.repair.maxAttempts, 5);
+  assert.equal(config.feedback.maxChars, 200);
 });

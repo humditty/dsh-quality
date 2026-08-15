@@ -10,7 +10,8 @@ type PartialConfig = {
   checkers?: { test?: { enabled?: boolean; timeout?: number } };
   policy?: { fail_on_test_failure?: boolean; failOnTestFailure?: boolean; fail_on_checker_error?: boolean; failOnCheckerError?: boolean };
   gate?: { auto_execute_missing_evidence?: boolean; autoExecuteMissingEvidence?: boolean };
-  repair?: { enabled?: boolean; max_steers_per_change_set?: number; maxSteersPerChangeSet?: number; stop_after_same_failure?: number; stopAfterSameFailure?: number };
+  repair?: { enabled?: boolean; max_attempts?: number; maxAttempts?: number; max_same_failure?: number; maxSameFailure?: number };
+  feedback?: { stdout_tail?: number; stdoutTail?: number; stderr_tail?: number; stderrTail?: number; max_chars?: number; maxChars?: number };
   report?: { console?: boolean; markdown?: boolean; markdown_path?: string; markdownPath?: string };
   output?: { max_stdout_chars?: number; maxStdoutChars?: number; max_stderr_chars?: number; maxStderrChars?: number };
 };
@@ -44,8 +45,13 @@ function mergeConfig(base: QualityConfig, raw: PartialConfig, overrides: ConfigO
     },
     repair: {
       enabled: raw.repair?.enabled ?? base.repair.enabled,
-      maxSteersPerChangeSet: raw.repair?.maxSteersPerChangeSet ?? raw.repair?.max_steers_per_change_set ?? base.repair.maxSteersPerChangeSet,
-      stopAfterSameFailure: raw.repair?.stopAfterSameFailure ?? raw.repair?.stop_after_same_failure ?? base.repair.stopAfterSameFailure
+      maxAttempts: raw.repair?.maxAttempts ?? raw.repair?.max_attempts ?? base.repair.maxAttempts,
+      maxSameFailure: raw.repair?.maxSameFailure ?? raw.repair?.max_same_failure ?? base.repair.maxSameFailure
+    },
+    feedback: {
+      stdoutTail: raw.feedback?.stdoutTail ?? raw.feedback?.stdout_tail ?? base.feedback.stdoutTail,
+      stderrTail: raw.feedback?.stderrTail ?? raw.feedback?.stderr_tail ?? base.feedback.stderrTail,
+      maxChars: raw.feedback?.maxChars ?? raw.feedback?.max_chars ?? base.feedback.maxChars
     },
     report: {
       console: raw.report?.console ?? base.report.console,

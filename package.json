@@ -1,6 +1,6 @@
 {
   "name": "dsh-quality",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Quality gate for coding agents running inside DeepSeek Harness.",
   "type": "module",
   "bin": {

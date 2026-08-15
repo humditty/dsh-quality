@@ -60,14 +60,14 @@ Agent → 代码改动 → 所需证明 → 验证结果 → 完成判断
 
 ## 当前实现
 
-当前仓库实现了这条闭环的 v0.2 核心，并保留 v0.1 CLI 作为兼容入口：
+当前仓库实现了这条闭环的可实践 v0.2，并保留 v0.1 CLI 作为兼容入口。此版本只解决四个能力：
 
-- 基于 Git 工作区差异、未跟踪文件和工具观察结果识别当前改动。
-- 对文档、源代码、测试和构建改动生成确定性的验证要求；无法可靠归因时保守处理。
-- 支持 Maven、Gradle、Python/pytest、Node/npm 的测试验证。
-- 将验证结果与输入摘要、计划摘要、执行来源和时间绑定；相关代码改变后结果自动失效。
-- 仅在 Agent 准备结束时做判断；缺失验证会按需执行，失败时最多自动反馈两次。
-- 运行命令支持取消、超时后的进程组终止，以及运行时日志截断。
+- **Workspace Fingerprint**：只支持 Git 工作区；指纹由 `HEAD`、工作树状态、变更文件和内容哈希组成。
+- **Evidence Freshness**：一次命令验证会记录命令、结果、输出、耗时与执行时的 workspace fingerprint；仅当 PASS 证据与当前 fingerprint 相同才复用。
+- **Failure Fingerprint**：失败输出会去除时间、UUID、临时目录与 ANSI 噪声后再比较。
+- **Repair Loop Guard**：最多 4 次修复、同一失败最多 2 次；停止时发送最后一条“如实报告未解决问题”的反馈，下一次结束允许 Agent 正常退出。
+
+验证前后 fingerprint 不同会自动重验一次，避免把“验证本身改动了工作区”的结果误当作当前结论。命令运行同时支持取消、超时后的进程组终止和运行时日志截断。
 
 当前尚未提供真实 DeepSeek Harness 的安装/注册包，也没有 affected-test、Lint、Coverage、安全扫描、持久化结果或 Dashboard。它也不是隔离沙箱：项目测试脚本仍在本机执行。
 
@@ -100,10 +100,11 @@ Proof must be relevant to the change, produced by real execution, fresh for the 
 
 ### Current capabilities
 
-- Git-aware change snapshots with conservative fallback when attribution is uncertain.
-- Deterministic verification planning and fresh-result reuse.
+- Git-only workspace fingerprints built from `HEAD`, status, changed paths, and file contents.
+- Reuse only a passing command verification whose fingerprint matches the current workspace.
 - Maven, Gradle, pytest, and npm test execution.
-- Bounded repair feedback at the terminal completion checkpoint.
+- Normalized failure fingerprints plus bounded repair attempts and repeated-failure detection.
+- One automatic re-verification when verification changes the workspace.
 - Cancellation, timeout escalation, and bounded command output.
 
 The repository currently exposes a v0.1-compatible CLI and v0.2 core library. A production DeepSeek Harness adapter, affected-test analysis, lint, coverage, security, durable storage, and a dashboard are future work.
@@ -127,9 +128,9 @@ dsh-quality run [--root path] [--timeout seconds] [--report-file path]
 `HarnessHook` accepts generic tool-result and terminal events. Map your host events to it, then connect its steering callback to the host’s actual continuation mechanism.
 
 ```ts
-const coordinator = createDefaultQualityCoordinator(config);
+const qualityGate = createDefaultQualityGate(config);
 const hook = new HarnessHook(
-  coordinator,
+  qualityGate,
   (feedback) => logger.info(feedback),
   (feedback) => host.steerAgent(agent, feedback)
 );

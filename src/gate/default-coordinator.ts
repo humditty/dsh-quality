@@ -22,7 +22,11 @@ export function createDefaultQualityCoordinator(config: QualityConfig, executor:
     store: new InMemoryEvidenceStore(),
     evaluator: new GateEvaluator(config.mode),
     mode: config.mode,
-    repair: config.repair,
+    repair: {
+      enabled: config.repair.enabled,
+      maxSteersPerChangeSet: config.repair.maxAttempts,
+      stopAfterSameFailure: config.repair.maxSameFailure
+    },
     autoExecuteMissingEvidence: config.gate.autoExecuteMissingEvidence
   });
 }

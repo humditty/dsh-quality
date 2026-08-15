@@ -1,4 +1,4 @@
-version: 1
+version: 2
 mode: gate
 
 trigger:
@@ -18,8 +18,13 @@ gate:
 
 repair:
   enabled: true
-  max_steers_per_change_set: 2
-  stop_after_same_failure: 2
+  max_attempts: 4
+  max_same_failure: 2
+
+feedback:
+  stdout_tail: 3000
+  stderr_tail: 5000
+  max_chars: 8000
 
 report:
   console: true
