@@ -10,6 +10,7 @@ export interface HarnessEvent {
   metadata?: Record<string, unknown>;
   changeSetConfidence?: "high" | "low";
   mayHaveMutated?: boolean;
+  signal?: AbortSignal;
 }
 
 export class HarnessHook {
@@ -38,7 +39,8 @@ export class HarnessHook {
       projectRoot: event.projectRoot,
       changedFiles: event.changedFiles,
       metadata: event.metadata,
-      changeSetConfidence: event.changeSetConfidence
+      changeSetConfidence: event.changeSetConfidence,
+      signal: event.signal
     });
     if (gate.result.verdict === "BLOCK") {
       const feedback = formatGateFeedback(gate.result, gate.repairAttempt, !gate.shouldSteer);

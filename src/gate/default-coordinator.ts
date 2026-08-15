@@ -1,5 +1,6 @@
 import type { QualityConfig } from "../config/config.js";
 import { ChangeTracker } from "../change/change-tracker.js";
+import { GitWorkspaceSnapshotter } from "../change/git-workspace-snapshotter.js";
 import { InMemoryEvidenceStore } from "../evidence/evidence-store.js";
 import { LocalProcessExecutor } from "../execution/local-process-executor.js";
 import type { ProcessExecutor } from "../execution/process-executor.js";
@@ -15,6 +16,7 @@ export function createDefaultQualityCoordinator(config: QualityConfig, executor:
     : [];
   return new QualityCoordinator({
     tracker: new ChangeTracker(),
+    snapshotter: new GitWorkspaceSnapshotter(),
     planner: new DeterministicQualityPlanner(),
     providers,
     store: new InMemoryEvidenceStore(),

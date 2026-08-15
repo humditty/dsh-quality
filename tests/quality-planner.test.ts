@@ -40,6 +40,15 @@ test("unknown mutating tool output produces a conservative plan", () => {
   assert.equal(planner.plan(changeSet).obligations[0].id, "test:full");
 });
 
+test("failed tools still contribute their declared changed files", () => {
+  const tracker = new ChangeTracker();
+  tracker.observe({ agentId: "agent", projectRoot: "/project", changedFiles: ["src/partial.ts"], success: false, mayHaveMutated: true });
+  const changeSet = tracker.snapshot({ agentId: "agent", projectRoot: "/project" });
+  const plan = new DeterministicQualityPlanner().plan(changeSet);
+  assert.deepEqual(changeSet.entries.map((entry) => entry.path), ["src/partial.ts"]);
+  assert.equal(plan.obligations.length, 1);
+});
+
 test("planner input digest changes when a tracked path changes", () => {
   const tracker = new ChangeTracker();
   tracker.observe({ agentId: "agent-1", projectRoot: "/project", changedFiles: ["src/user.ts"], success: true });

@@ -37,18 +37,25 @@ export class TestChecker implements QualityChecker {
     try {
       const processResult = await this.executor.execute(command, {
         cwd: context.projectRoot,
-        timeoutMs: this.config.checkers.test.timeout
+        timeoutMs: this.config.checkers.test.timeout,
+        maxStdoutChars: this.config.output.maxStdoutChars,
+        maxStderrChars: this.config.output.maxStderrChars,
+        signal: context.signal
       });
       const details = {
         projectType,
         command,
         exitCode: processResult.exitCode,
         timedOut: processResult.timedOut,
+        aborted: processResult.aborted,
         stdout: truncateOutput(processResult.stdout, this.config.output.maxStdoutChars),
         stderr: truncateOutput(processResult.stderr, this.config.output.maxStderrChars)
       };
       if (processResult.timedOut) {
         return { checkerId: this.id, status: "ERROR", summary: "Test execution timed out.", durationMs: processResult.durationMs, details };
+      }
+      if (processResult.aborted) {
+        return { checkerId: this.id, status: "ERROR", summary: "Test execution was cancelled.", durationMs: processResult.durationMs, details };
       }
       if (processResult.exitCode === 0) {
         return { checkerId: this.id, status: "PASS", summary: `${projectType} tests passed.`, durationMs: processResult.durationMs, details };

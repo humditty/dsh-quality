@@ -9,9 +9,11 @@ import { TestChecker, truncateOutput } from "../src/checkers/test/test-checker.j
 
 class FakeExecutor implements ProcessExecutor {
   public command = "";
+  public options?: ProcessOptions;
   constructor(private readonly result: ProcessResult) {}
-  async execute(command: string, _options: ProcessOptions): Promise<ProcessResult> {
+  async execute(command: string, options: ProcessOptions): Promise<ProcessResult> {
     this.command = command;
+    this.options = options;
     return this.result;
   }
 }
@@ -22,7 +24,7 @@ async function project(marker: string): Promise<string> {
   return root;
 }
 
-const result = (overrides: Partial<ProcessResult> = {}): ProcessResult => ({ exitCode: 0, stdout: "ok", stderr: "", durationMs: 12, timedOut: false, ...overrides });
+const result = (overrides: Partial<ProcessResult> = {}): ProcessResult => ({ exitCode: 0, stdout: "ok", stderr: "", durationMs: 12, timedOut: false, aborted: false, ...overrides });
 
 test("detects supported project types and resolves commands", async () => {
   const cases = [
@@ -47,6 +49,13 @@ test("maps test failure and timeout to structured results", async () => {
   assert.equal((failed.details as { exitCode: number }).exitCode, 1);
   const timeout = await new TestChecker(new FakeExecutor(result({ timedOut: true, exitCode: 124 })), DEFAULT_CONFIG).check({ projectRoot: root, changedFiles: [] });
   assert.equal(timeout.status, "ERROR");
+});
+
+test("passes cancellation through to the executor", async () => {
+  const controller = new AbortController();
+  const executor = new FakeExecutor(result());
+  await new TestChecker(executor, DEFAULT_CONFIG).check({ projectRoot: await project("package.json"), changedFiles: [], signal: controller.signal });
+  assert.equal(executor.options?.signal, controller.signal);
 });
 
 test("truncates output while retaining both ends", () => {

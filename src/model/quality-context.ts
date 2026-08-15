@@ -5,4 +5,5 @@ export interface QualityContext {
   framework?: string;
   metadata?: Record<string, unknown>;
   qualityRunActive?: boolean;
+  signal?: AbortSignal;
 }

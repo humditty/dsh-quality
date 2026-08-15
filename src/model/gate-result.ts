@@ -8,6 +8,7 @@ export type GateReasonCode =
   | "EVIDENCE_STALE"
   | "PROVIDER_ERROR"
   | "CHANGESET_UNVERIFIABLE"
+  | "WORKSPACE_CHANGED_DURING_VERIFICATION"
   | "REPAIR_LIMIT_REACHED";
 
 export interface GateReason {

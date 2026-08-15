@@ -9,6 +9,7 @@ export * from "./model/change-set.js";
 export * from "./model/quality-plan.js";
 export * from "./model/quality-evidence.js";
 export * from "./model/gate-result.js";
+export * from "./change/git-workspace-snapshotter.js";
 export * from "./utils/digest.js";
 export * from "./change/change-tracker.js";
 export * from "./planning/quality-planner.js";

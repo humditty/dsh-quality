@@ -17,17 +17,17 @@ DSH Quality 是一个面向 Coding Agent 的 evidence-driven quality gate。它�
 当前实现包含 v0.1 CLI 与 v0.2 Harness Gate 核心：
 
 - 支持 Maven、Gradle、Python/pytest、Node/npm 测试项目
-- 统一执行测试命令，支持超时、非零退出码、命令异常和日志截断
+- 统一执行测试命令，支持取消、超时后的进程组终止、非零退出码、命令异常和运行时日志截断
 - 将测试结果转换为 `QualityEvidence`；Provider 执行结果、Evidence 新鲜度、Gate 结论彼此独立
 - 输出控制台报告和 `quality-report.md`
 - `tools/result` / 兼容的 `tools/post-execute` 仅观察变更；`agent/turn-stopping` 才触发 Gate
-- 同一 ChangeSet 复用 fresh Evidence，不重复运行相同测试；相关文件再次改变后 Evidence 自动失效
+- Git 工作区中会以 `HEAD` 差异和未跟踪文件补全 ChangeSet；同一 ChangeSet 复用 fresh Evidence，不重复运行相同测试；相关文件再次改变后 Evidence 自动失效
 - `advisory`、`gate`、`strict` 三种模式，以及同一失败最多两次自动 steering 的修复上限
 - 提供正常项目和故障项目示例，可复现 PASS / FAIL
 
 ### 当前边界
 
-当前仍不是完整的企业质量平台：没有真实 DeepSeek Harness 的安装/注册包，也没有 Git diff Workspace Snapshotter、affected-test、Lint、Coverage、安全扫描、Dashboard 或持久化 Evidence。Harness 接入目前通过通用 `HarnessHook` 接收事件对象；宿主需要把实际 Harness 事件映射给该适配器。
+当前仍不是完整的企业质量平台：没有真实 DeepSeek Harness 的安装/注册包，也没有 affected-test、Lint、Coverage、安全扫描、Dashboard 或持久化 Evidence。Harness 接入目前通过通用 `HarnessHook` 接收事件对象；宿主需要把实际 Harness 事件映射给该适配器。Git 不可用时会退回 Observer 路径并降为 low confidence；这不是隔离沙箱，项目测试脚本仍在本机执行。
 
 完整设计与当前实现边界见 [v0.2 Evidence-driven Quality Gate 设计](docs/design/2026-08-14-evidence-driven-quality-gate-v0.2.md)。
 

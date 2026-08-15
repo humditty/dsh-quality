@@ -45,7 +45,7 @@ export class ChangeTracker {
   private readonly bases = new Map<string, Date>();
 
   observe(observation: ChangeObservation): void {
-    if (!observation.success || observation.source === "dsh-quality") return;
+    if (observation.source === "dsh-quality") return;
     const key = this.key(observation.agentId, observation.projectRoot);
     const observedAt = observation.observedAt ?? new Date();
     if (!this.bases.has(key)) this.bases.set(key, observedAt);
@@ -62,23 +62,11 @@ export class ChangeTracker {
     const key = this.key(options.agentId, options.projectRoot);
     const state = this.paths.get(key);
     const tracked = [...(state?.paths.values() ?? [])].sort((left, right) => left.path.localeCompare(right.path));
-    const entries: ChangeEntry[] = tracked.map(({ path, revision }) => ({
-      path,
-      kind: classifyPath(path),
-      contentDigest: this.contentDigest(options.projectRoot, path, revision)
-    }));
+    const entries = tracked.map(({ path, revision }) => createChangeEntry(options.projectRoot, path, revision));
     const observedAt = new Date();
     const confidence = options.confidence ?? (state?.lowConfidence ? "low" : "high");
     const base = { capturedAt: this.bases.get(key) ?? observedAt };
-    const id = `changeset:${digest({ projectRoot: options.projectRoot, base, entries, confidence }).slice(0, 16)}`;
-    return {
-      id,
-      projectRoot: options.projectRoot,
-      base,
-      entries,
-      confidence,
-      observedAt
-    };
+    return createChangeSet(options.projectRoot, base, entries, confidence, observedAt);
   }
 
   reset(agentId: string | undefined, projectRoot: string): void {
@@ -91,15 +79,36 @@ export class ChangeTracker {
     return `${agentId ?? "default"}:${projectRoot}`;
   }
 
-  private contentDigest(projectRoot: string, path: string, revision: number): string {
-    const root = resolve(projectRoot);
-    const target = resolve(root, path);
-    if (relative(root, target).startsWith("..")) return digest({ path, revision, outsideProjectRoot: true });
-    try {
-      if (existsSync(target)) return digest(readFileSync(target));
-    } catch {
-      // Fall back to the monotonic observation revision. Gate evaluation must remain available.
-    }
-    return digest({ path, revision });
+}
+
+export function createChangeEntry(projectRoot: string, path: string, revision = 0): ChangeEntry {
+  return {
+    path,
+    kind: classifyPath(path),
+    contentDigest: digestPathContent(projectRoot, path, revision)
+  };
+}
+
+export function createChangeSet(
+  projectRoot: string,
+  base: ChangeSet["base"],
+  entries: ChangeEntry[],
+  confidence: ChangeSet["confidence"],
+  observedAt = new Date()
+): ChangeSet {
+  const normalizedEntries = [...entries].sort((left, right) => left.path.localeCompare(right.path));
+  const id = `changeset:${digest({ projectRoot, base, entries: normalizedEntries, confidence }).slice(0, 16)}`;
+  return { id, projectRoot, base, entries: normalizedEntries, confidence, observedAt };
+}
+
+function digestPathContent(projectRoot: string, path: string, revision: number): string {
+  const root = resolve(projectRoot);
+  const target = resolve(root, path);
+  if (relative(root, target).startsWith("..")) return digest({ path, revision, outsideProjectRoot: true });
+  try {
+    if (existsSync(target)) return digest(readFileSync(target));
+  } catch {
+    // Fall back to the monotonic observation revision. Gate evaluation must remain available.
   }
+  return digest({ path, revision });
 }

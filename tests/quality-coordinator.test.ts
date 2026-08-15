@@ -22,6 +22,21 @@ class FakeProvider implements EvidenceProvider {
   }
 }
 
+class DeferredProvider extends FakeProvider {
+  private releaseCollection?: () => void;
+  private readonly waitForRelease = new Promise<void>((resolve) => { this.releaseCollection = resolve; });
+  private startedCollection?: () => void;
+  readonly collecting = new Promise<void>((resolve) => { this.startedCollection = resolve; });
+
+  override async collect(obligation: VerificationObligation, plan: QualityPlan, context: QualityContext): Promise<QualityEvidence> {
+    this.startedCollection?.();
+    await this.waitForRelease;
+    return super.collect(obligation, plan, context);
+  }
+
+  release(): void { this.releaseCollection?.(); }
+}
+
 function coordinator(provider: FakeProvider, mode: "advisory" | "gate" | "strict" = "gate") {
   const tracker = new ChangeTracker();
   const result = new QualityCoordinator({ tracker, planner: new DeterministicQualityPlanner(), providers: [provider], store: new InMemoryEvidenceStore(), evaluator: new GateEvaluator(mode), mode, repair: { enabled: true, maxSteersPerChangeSet: 2, stopAfterSameFailure: 2 } });
@@ -60,4 +75,31 @@ test("failed evidence blocks and stops steering after the same failure recurs", 
   assert.equal(second.shouldSteer, false);
   assert.ok(second.result.reasons.some((reason) => reason.code === "REPAIR_LIMIT_REACHED"));
   assert.equal(provider.calls, 1);
+});
+
+test("coordinator replans when the workspace changes during verification", async () => {
+  const provider = new DeferredProvider();
+  const { tracker, result } = coordinator(provider);
+  tracker.observe({ agentId: "agent", projectRoot: "/project", changedFiles: ["src/a.ts"], success: true });
+  const running = result.gate({ agentId: "agent", projectRoot: "/project", changedFiles: [] });
+  await provider.collecting;
+  tracker.observe({ agentId: "agent", projectRoot: "/project", changedFiles: ["src/a.ts"], success: true });
+  provider.release();
+  const gate = await running;
+  assert.equal(gate.result.verdict, "ALLOW");
+  assert.equal(provider.calls, 2);
+});
+
+test("coordinator coalesces concurrent gates for the same newer change set", async () => {
+  const provider = new DeferredProvider();
+  const { tracker, result } = coordinator(provider);
+  tracker.observe({ agentId: "agent", projectRoot: "/project", changedFiles: ["src/a.ts"], success: true });
+  const first = result.gate({ agentId: "agent", projectRoot: "/project", changedFiles: [] });
+  await provider.collecting;
+  tracker.observe({ agentId: "agent", projectRoot: "/project", changedFiles: ["src/a.ts"], success: true });
+  const second = result.gate({ agentId: "agent", projectRoot: "/project", changedFiles: [] });
+  provider.release();
+  const [firstResult, secondResult] = await Promise.all([first, second]);
+  assert.equal(firstResult.changeSet.id, secondResult.changeSet.id);
+  assert.equal(provider.calls, 2);
 });

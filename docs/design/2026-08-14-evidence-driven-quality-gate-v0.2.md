@@ -1,6 +1,6 @@
 # DSH Quality v0.2：Evidence-driven Quality Gate
 
-> 状态：核心已实现（2026-08-14）。当前仓库已实现 ChangeTracker、确定性 Planner、Test Evidence Provider、内存 Evidence Store、Gate Evaluator、并发合并的 Coordinator、Repair Controller 与通用 HarnessHook；v0.1 CLI 仍保留为兼容入口。Git diff Workspace Snapshotter、真实 DeepSeek Harness 注册、affected-test、Lint/Coverage/Security 和持久化仍未实现。
+> 状态：核心已实现（2026-08-15）。当前仓库已实现 ChangeTracker、Git Workspace Snapshotter、确定性 Planner、Test Evidence Provider、内存 Evidence Store、变更集感知的并发 Gate、Repair Controller 与通用 HarnessHook；v0.1 CLI 仍保留为兼容入口。真实 DeepSeek Harness 注册、affected-test、Lint/Coverage/Security 和持久化仍未实现。
 
 ## 1. 结论与产品定义
 
@@ -79,7 +79,7 @@ flowchart TD
 
 `tools/result` 只追加 `ToolObservation`：工具名、成功与否、声明的路径、时间、是否由 DSH Quality 发起。它是低成本线索，不是变更真相；Shell 工具可能修改任意文件而不返回路径。
 
-设计目标是在每个 Agent turn 开始时记录基线，并在 Gate 前由 `WorkspaceSnapshotter` 用 Git diff 加文件摘要校验产出 `ChangeSet`。**当前实现**先使用 `ChangeTracker`：它根据宿主事件提供的 `changedFiles` 记录路径，并在文件可读时加入内容摘要；路径缺失或标记为可能修改时降为 `confidence = low`。因此它是保守的观察器，不替代将来的 Git snapshotter。DSH Quality 自己产生的报告文件必须排除，避免自触发。
+当前实现会先由 `ChangeTracker` 根据宿主事件提供的 `changedFiles` 记录路径，并在文件可读时加入内容摘要；随后 `GitWorkspaceSnapshotter` 在 Gate 前合并 `HEAD` 以来的已跟踪改动与未跟踪文件，产出当前真实工作树的 `ChangeSet`。Git 不可用时退回 Observer 快照并强制 `confidence = low`；`mayHaveMutated` 但没有路径的工具也保留 low confidence，即使工具最后失败。DSH Quality 自己产生的报告文件必须排除，避免自触发。
 
 ```ts
 interface ChangeSet {
@@ -224,8 +224,8 @@ Feedback Composer 只向 Agent 输出：阻断问题、相关文件/测试、下
 
 | 风险 | v0.2 处理 |
 | --- | --- |
-| 测试长期运行 | Provider 统一超时；Runner 观察 `turn-stopping` 的 AbortSignal |
-| Gate 重入 | 每个 agent/workspace 同时最多一个 Gate；相同 ChangeSet/plan 只自动执行一次 |
+| 测试长期运行 | Provider 统一超时；Runner 接收可选 AbortSignal，并按 SIGTERM 后 SIGKILL 终止进程组 |
+| Gate 重入 | 同一 agent/workspace/ChangeSet/plan 同时最多一个 Gate；验证结束后重新快照，变更后最多自动重规划一次 |
 | Shell 任意执行 | Provider 命令由项目检测与配置白名单解析，不能来自 Agent 自由文本 |
 | Reporter 失败 | 记录诊断，不改变已经得出的 GateResult |
 | 恢复会话 | v0.2 可先失效内存证据并要求重验；持久化 Evidence 是后续能力 |
