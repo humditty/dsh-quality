@@ -2,22 +2,34 @@
 
 ## 中文简介
 
-DSH Quality 是一个可独立运行的 Agent 代码质量门禁插件。它会在代码发生变更后自动识别项目类型、执行测试、收集标准输出和错误信息，再根据 Quality Policy 给出 `PASS`、`WARN` 或 `FAIL`，并生成可反馈给 Agent 的结构化结果。
+DSH Quality 是一个面向 Coding Agent 的 evidence-driven quality gate。它不在每次编辑后都跑测试，而是在 Agent 准备结束时判断：当前代码是否已有足够、新鲜、可追溯的验证证据。
+
+### 这次从 v0.1 改了什么？
+
+- **触发点后移**：原先 Hook 会在代码工具完成后立即检查；现在工具结果只记录变更，终止事件才评估 Gate。
+- **结果变成证据**：测试不再只是一次 `PASS / FAIL` 输出，而是带输入摘要、计划摘要、命令来源与日志摘要的 `QualityEvidence`。
+- **重复执行受控**：同一 ChangeSet 的同一验证计划只自动执行一次；未改相关输入时复用既有证据，改动后才自动判为过期。
+- **门禁语义更清楚**：Provider 的 `PASS / FAIL / ERROR / SKIPPED`、Evidence 的 `FRESH / STALE`、Gate 的 `ALLOW / WARN / BLOCK` 分层建模。
+- **避免无限修复循环**：失败反馈最多自动 steering 两次；相同失败持续存在时停止自动 steering，保留问题给用户或新的修复 turn 处理。
 
 ### 现在真的能做什么？
 
-当前 v0.1 已经可以直接运行，并覆盖最小闭环：
+当前实现包含 v0.1 CLI 与 v0.2 Harness Gate 核心：
 
 - 支持 Maven、Gradle、Python/pytest、Node/npm 测试项目
 - 统一执行测试命令，支持超时、非零退出码、命令异常和日志截断
-- 测试通过返回 `PASS`，测试失败或执行错误返回 `FAIL`
+- 将测试结果转换为 `QualityEvidence`；Provider 执行结果、Evidence 新鲜度、Gate 结论彼此独立
 - 输出控制台报告和 `quality-report.md`
-- 通过通用 `tools/post-execute` Hook 感知代码变更，并避免质量检查递归触发
+- `tools/result` / 兼容的 `tools/post-execute` 仅观察变更；`agent/turn-stopping` 才触发 Gate
+- 同一 ChangeSet 复用 fresh Evidence，不重复运行相同测试；相关文件再次改变后 Evidence 自动失效
+- `advisory`、`gate`、`strict` 三种模式，以及同一失败最多两次自动 steering 的修复上限
 - 提供正常项目和故障项目示例，可复现 PASS / FAIL
 
 ### 当前边界
 
-这是一个可用的 v0.1 MVP，不是完整的企业质量平台。当前还没有实现真实 Harness 产品的专用事件注册、Lint、覆盖率、安全扫描、Dashboard 或自动修复。Harness 接入目前通过 `HarnessHook` 接收统一事件对象；只要宿主能把工具执行事件转换成这个对象，就可以接入。
+当前仍不是完整的企业质量平台：没有真实 DeepSeek Harness 的安装/注册包，也没有 Git diff Workspace Snapshotter、affected-test、Lint、Coverage、安全扫描、Dashboard 或持久化 Evidence。Harness 接入目前通过通用 `HarnessHook` 接收事件对象；宿主需要把实际 Harness 事件映射给该适配器。
+
+完整设计与当前实现边界见 [v0.2 Evidence-driven Quality Gate 设计](docs/design/2026-08-14-evidence-driven-quality-gate-v0.2.md)。
 
 ### 30 秒运行
 
@@ -39,7 +51,7 @@ node dist/src/cli.js run --root examples/node-fail
 
 ## English
 
-DSH Quality is a small, standalone quality gate for coding agents. v0.1 detects a project type, runs its tests, turns the process result into a structured `CheckResult`, applies a PASS/WARN/FAIL policy, and reports concise feedback.
+DSH Quality is an evidence-driven quality gate for coding agents. The CLI retains the v0.1 test-runner flow, while the Harness core records changes, plans verification obligations, reuses fresh evidence, and blocks terminal completion only when required evidence is missing, stale, failed, or unavailable.
 
 ## Supported test commands
 
@@ -66,33 +78,38 @@ Options:
 dsh-quality run [--root path] [--timeout seconds] [--report-file path]
 ```
 
-`.dsh-quality.yaml` is optional. Project configuration uses the documented v0.1 shape; timeout values in YAML are seconds and CLI `--timeout` values are seconds.
+`.dsh-quality.yaml` is optional. YAML timeouts are seconds and CLI `--timeout` values are seconds. The v0.2 Gate adds `mode`, `gate.auto_execute_missing_evidence`, and `repair` controls; see the included configuration file for defaults.
 
 ## Harness integration
 
-`HarnessHook` accepts a generic `tools/post-execute` event. It triggers only when the tool succeeded, changed a code file, and no quality run is active. Events emitted by DSH Quality are ignored when they carry `metadata.source: dsh-quality`, which prevents recursive quality runs.
+`HarnessHook` accepts generic tool-result and terminal events. Tool events only update the change ledger; the Gate runs at `agent/turn-stopping`. Events emitted by DSH Quality are ignored when they carry `metadata.source: dsh-quality`.
 
 ```ts
-const hook = new HarnessHook(engine, (feedback) => agent.send(feedback));
+const coordinator = createDefaultQualityCoordinator(config);
+const hook = new HarnessHook(
+  coordinator,
+  (feedback) => logger.info(feedback),
+  (feedback) => host.steerAgent(agent, feedback) // 宿主负责映射为实际 Harness 的 steering 调用
+);
 await hook.handle({
-  type: "tools/post-execute",
+  type: "tools/result",
   success: true,
   changedFiles: ["src/user.ts"],
-  projectRoot: process.cwd()
+  projectRoot: process.cwd(),
+  mayHaveMutated: true
 });
+await hook.handle({ type: "agent/turn-stopping", success: true, changedFiles: [], projectRoot: process.cwd() });
 ```
 
 ## Architecture
 
 ```text
-HarnessHook → QualityEngine → QualityChecker → ProcessExecutor
-                         ↓
-                   QualityPolicy
-                         ↓
-                    Reporters
+ChangeTracker → DeterministicPlanner → Verification Obligations
+                                       ↓
+TestEvidenceProvider → EvidenceStore → GateEvaluator → RepairController
 ```
 
-The TestChecker, ProcessExecutor, Policy, and Reporter are interfaces at their boundaries so later Lint, Coverage, Security, JSON, or dashboard integrations can be added without changing the Engine lifecycle.
+The v0.2 provider, evidence, evaluator, and reporter boundaries allow future Lint, Coverage, Security, JSON, or dashboard support without changing Gate lifecycle semantics.
 
 ## Verification
 

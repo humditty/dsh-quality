@@ -5,9 +5,12 @@ import { DEFAULT_CONFIG, type QualityConfig } from "./config.js";
 
 type PartialConfig = {
   version?: number;
+  mode?: "advisory" | "gate" | "strict";
   trigger?: { on_code_change?: boolean; onCodeChange?: boolean };
   checkers?: { test?: { enabled?: boolean; timeout?: number } };
   policy?: { fail_on_test_failure?: boolean; failOnTestFailure?: boolean; fail_on_checker_error?: boolean; failOnCheckerError?: boolean };
+  gate?: { auto_execute_missing_evidence?: boolean; autoExecuteMissingEvidence?: boolean };
+  repair?: { enabled?: boolean; max_steers_per_change_set?: number; maxSteersPerChangeSet?: number; stop_after_same_failure?: number; stopAfterSameFailure?: number };
   report?: { console?: boolean; markdown?: boolean; markdown_path?: string; markdownPath?: string };
   output?: { max_stdout_chars?: number; maxStdoutChars?: number; max_stderr_chars?: number; maxStderrChars?: number };
 };
@@ -20,6 +23,7 @@ export interface ConfigOverrides {
 function mergeConfig(base: QualityConfig, raw: PartialConfig, overrides: ConfigOverrides): QualityConfig {
   return {
     version: raw.version ?? base.version,
+    mode: raw.mode ?? base.mode,
     trigger: {
       onCodeChange: raw.trigger?.onCodeChange ?? raw.trigger?.on_code_change ?? base.trigger.onCodeChange
     },
@@ -34,6 +38,14 @@ function mergeConfig(base: QualityConfig, raw: PartialConfig, overrides: ConfigO
     policy: {
       failOnTestFailure: raw.policy?.failOnTestFailure ?? raw.policy?.fail_on_test_failure ?? base.policy.failOnTestFailure,
       failOnCheckerError: raw.policy?.failOnCheckerError ?? raw.policy?.fail_on_checker_error ?? base.policy.failOnCheckerError
+    },
+    gate: {
+      autoExecuteMissingEvidence: raw.gate?.autoExecuteMissingEvidence ?? raw.gate?.auto_execute_missing_evidence ?? base.gate.autoExecuteMissingEvidence
+    },
+    repair: {
+      enabled: raw.repair?.enabled ?? base.repair.enabled,
+      maxSteersPerChangeSet: raw.repair?.maxSteersPerChangeSet ?? raw.repair?.max_steers_per_change_set ?? base.repair.maxSteersPerChangeSet,
+      stopAfterSameFailure: raw.repair?.stopAfterSameFailure ?? raw.repair?.stop_after_same_failure ?? base.repair.stopAfterSameFailure
     },
     report: {
       console: raw.report?.console ?? base.report.console,

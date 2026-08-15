@@ -1,4 +1,5 @@
 version: 1
+mode: gate
 
 trigger:
   on_code_change: true
@@ -11,6 +12,14 @@ checkers:
 policy:
   fail_on_test_failure: true
   fail_on_checker_error: true
+
+gate:
+  auto_execute_missing_evidence: true
+
+repair:
+  enabled: true
+  max_steers_per_change_set: 2
+  stop_after_same_failure: 2
 
 report:
   console: true

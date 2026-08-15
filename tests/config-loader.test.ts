@@ -16,6 +16,7 @@ test("loadConfig reads yaml seconds and applies overrides", async () => {
   const root = await mkdtemp(join(tmpdir(), "dsh-quality-config-"));
   await writeFile(join(root, ".dsh-quality.yaml"), [
     "version: 1",
+    "mode: strict",
     "checkers:",
     "  test:",
     "    enabled: false",
@@ -24,12 +25,19 @@ test("loadConfig reads yaml seconds and applies overrides", async () => {
     "  markdown: false",
     "output:",
     "  max_stdout_chars: 20",
+    "gate:",
+    "  auto_execute_missing_evidence: false",
+    "repair:",
+    "  max_steers_per_change_set: 5",
     ""
   ].join("\n"));
   const config = await loadConfig(root, { timeout: 5_000, markdownPath: "custom.md" });
   assert.equal(config.checkers.test.enabled, false);
+  assert.equal(config.mode, "strict");
   assert.equal(config.checkers.test.timeout, 5_000);
   assert.equal(config.report.markdown, false);
   assert.equal(config.report.markdownPath, "custom.md");
   assert.equal(config.output.maxStdoutChars, 20);
+  assert.equal(config.gate.autoExecuteMissingEvidence, false);
+  assert.equal(config.repair.maxSteersPerChangeSet, 5);
 });

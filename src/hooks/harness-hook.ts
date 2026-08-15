@@ -1,49 +1,58 @@
-import type { QualityContext } from "../model/quality-context.js";
-import type { QualityResult } from "../model/quality-result.js";
-import { QualityEngine } from "../engine/quality-engine.js";
+import type { GateResult } from "../model/gate-result.js";
+import { QualityCoordinator } from "../gate/quality-coordinator.js";
 
 export interface HarnessEvent {
-  type: string;
-  success: boolean;
-  changedFiles: string[];
+  type: "tools/result" | "tools/post-execute" | "agent/turn-stopping";
   projectRoot: string;
+  changedFiles: string[];
+  success: boolean;
+  agentId?: string;
   metadata?: Record<string, unknown>;
+  changeSetConfidence?: "high" | "low";
+  mayHaveMutated?: boolean;
 }
 
 export class HarnessHook {
-  constructor(private readonly engine: QualityEngine, private readonly onFeedback?: (message: string) => void) {}
+  constructor(
+    private readonly coordinator: QualityCoordinator,
+    private readonly onFeedback?: (message: string) => void,
+    private readonly onSteer?: (message: string) => void
+  ) {}
 
-  async handle(event: HarnessEvent): Promise<QualityResult | undefined> {
-    if (event.type !== "tools/post-execute" || !event.success || event.changedFiles.length === 0) return undefined;
-    if (event.metadata?.source === "dsh-quality" || event.metadata?.qualityRunActive === true || this.engine.isActive()) return undefined;
-    if (!event.changedFiles.some(isCodeFile)) return undefined;
-
-    const context: QualityContext = {
+  async handle(event: HarnessEvent): Promise<GateResult | undefined> {
+    if (event.metadata?.source === "dsh-quality") return undefined;
+    if (event.type === "tools/result" || event.type === "tools/post-execute") {
+      this.coordinator.observeToolResult({
+        agentId: event.agentId,
+        projectRoot: event.projectRoot,
+        changedFiles: event.changedFiles,
+        success: event.success,
+        source: typeof event.metadata?.source === "string" ? event.metadata.source : undefined,
+        mayHaveMutated: event.mayHaveMutated
+      });
+      return undefined;
+    }
+    if (!event.success) return undefined;
+    const gate = await this.coordinator.gate({
+      agentId: event.agentId,
       projectRoot: event.projectRoot,
       changedFiles: event.changedFiles,
       metadata: event.metadata,
-      qualityRunActive: false
-    };
-    const result = await this.engine.run(context);
-    this.onFeedback?.(formatAgentFeedback(result));
-    return result;
-  }
-}
-
-function isCodeFile(file: string): boolean {
-  return /\.(java|kt|kts|py|js|jsx|ts|tsx|mjs|cjs|go|rs|rb|php|cs|cpp|c|h|swift|vue|svelte)$/i.test(file);
-}
-
-export function formatAgentFeedback(result: QualityResult): string {
-  const lines = [`Quality Gate ${result.status}.`];
-  for (const check of result.results) {
-    lines.push(`- ${check.checkerId}: ${check.status} — ${check.summary}`);
-    const details = check.details as { stderr?: string; stdout?: string } | undefined;
-    if (check.status === "FAIL" || check.status === "ERROR") {
-      if (details?.stderr) lines.push(`  stderr: ${details.stderr}`);
-      if (details?.stdout) lines.push(`  stdout: ${details.stdout}`);
+      changeSetConfidence: event.changeSetConfidence
+    });
+    if (gate.result.verdict === "BLOCK") {
+      const feedback = formatGateFeedback(gate.result, gate.repairAttempt, !gate.shouldSteer);
+      this.onFeedback?.(feedback);
+      if (gate.shouldSteer) this.onSteer?.(feedback);
     }
+    return gate.result;
   }
-  if (result.status === "FAIL") lines.push("Please inspect the failure and fix the implementation, then run quality verification again.");
+}
+
+export function formatGateFeedback(result: GateResult, repairAttempt?: number, repairStopped = false): string {
+  const lines = ["Quality Gate BLOCKED", "", ...result.reasons.filter((reason) => reason.code !== "REPAIR_LIMIT_REACHED").map((reason) => `- ${reason.message}`)];
+  if (repairAttempt !== undefined) lines.push("", `Repair attempts for this change set: ${repairAttempt}`);
+  if (repairStopped || result.reasons.some((reason) => reason.code === "REPAIR_LIMIT_REACHED")) lines.push("Automatic repair stopped. Please inspect the remaining issue or start a new repair turn.");
+  else lines.push("Please fix the blocking issue and verify again.");
   return lines.join("\n");
 }
