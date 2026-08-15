@@ -1,37 +1,79 @@
 # DSH Quality
 
-## 中文简介
+> **让 Coding Agent 在宣布完成之前，用可验证证据证明自己的工作。**
 
-DSH Quality 是一个面向 Coding Agent 的 evidence-driven quality gate。它不在每次编辑后都跑测试，而是在 Agent 准备结束时判断：当前代码是否已有足够、新鲜、可追溯的验证证据。
+> **Make coding agents prove their work before they declare it done.**
 
-### 这次从 v0.1 改了什么？
+## 为什么存在？
 
-- **触发点后移**：原先 Hook 会在代码工具完成后立即检查；现在工具结果只记录变更，终止事件才评估 Gate。
-- **结果变成证据**：测试不再只是一次 `PASS / FAIL` 输出，而是带输入摘要、计划摘要、命令来源与日志摘要的 `QualityEvidence`。
-- **重复执行受控**：同一 ChangeSet 的同一验证计划只自动执行一次；未改相关输入时复用既有证据，改动后才自动判为过期。
-- **门禁语义更清楚**：Provider 的 `PASS / FAIL / ERROR / SKIPPED`、Evidence 的 `FRESH / STALE`、Gate 的 `ALLOW / WARN / BLOCK` 分层建模。
-- **避免无限修复循环**：失败反馈最多自动 steering 两次；相同失败持续存在时停止自动 steering，保留问题给用户或新的修复 turn 处理。
+Coding Agent 会理解任务、修改代码，然后说“完成了”。但“完成”首先只是模型对上下文的判断，不等于工程上的真实状态。
 
-### 现在真的能做什么？
+```text
+Agent 的完成声明
+≠
+代码已经满足任务结束条件
+```
 
-当前实现包含 v0.1 CLI 与 v0.2 Harness Gate 核心：
+真实世界仍需要回答：代码能否构建？测试是否通过？改动是否引入回归？当前代码是否仍对应那次验证？
 
-- 支持 Maven、Gradle、Python/pytest、Node/npm 测试项目
-- 统一执行测试命令，支持取消、超时后的进程组终止、非零退出码、命令异常和运行时日志截断
-- 将测试结果转换为 `QualityEvidence`；Provider 执行结果、Evidence 新鲜度、Gate 结论彼此独立
-- 输出控制台报告和 `quality-report.md`
-- `tools/result` / 兼容的 `tools/post-execute` 仅观察变更；`agent/turn-stopping` 才触发 Gate
-- Git 工作区中会以 `HEAD` 差异和未跟踪文件补全 ChangeSet；同一 ChangeSet 复用 fresh Evidence，不重复运行相同测试；相关文件再次改变后 Evidence 自动失效
-- `advisory`、`gate`、`strict` 三种模式，以及同一失败最多两次自动 steering 的修复上限
-- 提供正常项目和故障项目示例，可复现 PASS / FAIL
+DSH Quality 处理的正是这段差距：把 Agent 的主观完成声明，变成基于当前代码状态的可验证结论。
 
-### 当前边界
+## 什么算完成？
 
-当前仍不是完整的企业质量平台：没有真实 DeepSeek Harness 的安装/注册包，也没有 affected-test、Lint、Coverage、安全扫描、Dashboard 或持久化 Evidence。Harness 接入目前通过通用 `HarnessHook` 接收事件对象；宿主需要把实际 Harness 事件映射给该适配器。Git 不可用时会退回 Observer 路径并降为 low confidence；这不是隔离沙箱，项目测试脚本仍在本机执行。
+DSH Quality 不试图定义“什么是优秀代码”。它只判断：**当前项目声明的结束条件，是否已经由足够的验证事实满足。**
 
-完整设计与当前实现边界见 [v0.2 Evidence-driven Quality Gate 设计](docs/design/2026-08-14-evidence-driven-quality-gate-v0.2.md)。
+```text
+Agent 声明完成
+        ↓
+当前改动需要哪些证明？
+        ↓
+执行真实验证，得到可追溯结果
+        ↓
+这些结果对当前代码是否仍有效？
+        ↓
+满足条件 → 允许完成
+不满足   → 给出修复反馈，继续工作
+```
 
-### 30 秒运行
+一项可信证明至少要具备：
+
+- **相关**：与当前改动及其风险有关。
+- **真实执行**：来自实际命令、工具或受信任的外部验证，而非模型猜测。
+- **新鲜**：验证后相关代码没有再变化。
+- **可追溯**：能知道验证了什么、针对哪个代码状态、由谁执行、结果如何。
+
+因此，“之前跑过测试”不够；它必须能证明**现在这份代码**满足所需条件。
+
+## 这是一个反馈闭环
+
+```text
+用户要求 → 期望状态
+               ↓
+Agent → 代码改动 → 所需证明 → 验证结果 → 完成判断
+                                             │
+                              不足 ← 修复反馈 ←┘
+```
+
+当验证不足或失败时，DSH Quality 不只报告问题，还将可操作的反馈交给 Agent。Agent 修复后重新验证；重复失败则会停止自动循环，避免无止境消耗。
+
+这就是项目的产品边界：增强 Agent “完成声明”的可信度。它不是代码生成器、CI/CD 平台、通用日志系统、Agent Benchmark 或聊天界面。
+
+## 当前实现
+
+当前仓库实现了这条闭环的 v0.2 核心，并保留 v0.1 CLI 作为兼容入口：
+
+- 基于 Git 工作区差异、未跟踪文件和工具观察结果识别当前改动。
+- 对文档、源代码、测试和构建改动生成确定性的验证要求；无法可靠归因时保守处理。
+- 支持 Maven、Gradle、Python/pytest、Node/npm 的测试验证。
+- 将验证结果与输入摘要、计划摘要、执行来源和时间绑定；相关代码改变后结果自动失效。
+- 仅在 Agent 准备结束时做判断；缺失验证会按需执行，失败时最多自动反馈两次。
+- 运行命令支持取消、超时后的进程组终止，以及运行时日志截断。
+
+当前尚未提供真实 DeepSeek Harness 的安装/注册包，也没有 affected-test、Lint、Coverage、安全扫描、持久化结果或 Dashboard。它也不是隔离沙箱：项目测试脚本仍在本机执行。
+
+完整的架构、边界和路线图见 [v0.2 Evidence-driven Quality Gate 设计](docs/design/2026-08-14-evidence-driven-quality-gate-v0.2.md)。
+
+## 30 秒运行
 
 ```bash
 npm install --ignore-scripts
@@ -39,30 +81,34 @@ npm run build
 node dist/src/cli.js run --root examples/node
 ```
 
-预期结果：`Quality Gate: PASS`。再运行故障示例：
+预期结果：`Quality Gate: PASS`。故障示例会以退出码 `1` 结束：
 
 ```bash
 node dist/src/cli.js run --root examples/node-fail
 ```
 
-预期结果：`Quality Gate: FAIL`，并以退出码 `1` 结束。这就是当前版本已经验证过的真实运行路径。
-
----
-
 ## English
 
-DSH Quality is an evidence-driven quality gate for coding agents. The CLI retains the v0.1 test-runner flow, while the Harness core records changes, plans verification obligations, reuses fresh evidence, and blocks terminal completion only when required evidence is missing, stale, failed, or unavailable.
+DSH Quality turns an agent’s subjective “done” into a verifiable completion decision. It asks one question: **does the current code have enough trustworthy proof to satisfy this project’s declared completion criteria?**
 
-## Supported test commands
+```text
+Claim completion → determine required proof → run verification
+→ bind results to the current code state → allow completion or request repair
+```
 
-| Project marker | Command |
-| --- | --- |
-| `pom.xml` | `mvn test` |
-| `build.gradle` / `build.gradle.kts` | `./gradlew test` or `gradle test` |
-| `pytest.ini` / `pyproject.toml` / `requirements.txt` | `pytest` |
-| `package.json` | `npm test` |
+Proof must be relevant to the change, produced by real execution, fresh for the current code state, and traceable to its source and result. DSH Quality is a feedback loop for coding agents—not a code generator, CI/CD platform, generic log system, agent benchmark, or chat UI.
 
-## Run the quality gate
+### Current capabilities
+
+- Git-aware change snapshots with conservative fallback when attribution is uncertain.
+- Deterministic verification planning and fresh-result reuse.
+- Maven, Gradle, pytest, and npm test execution.
+- Bounded repair feedback at the terminal completion checkpoint.
+- Cancellation, timeout escalation, and bounded command output.
+
+The repository currently exposes a v0.1-compatible CLI and v0.2 core library. A production DeepSeek Harness adapter, affected-test analysis, lint, coverage, security, durable storage, and a dashboard are future work.
+
+## Run
 
 ```bash
 npm install --ignore-scripts
@@ -70,27 +116,24 @@ npm run build
 node dist/src/cli.js run --root examples/node
 ```
 
-The CLI writes `quality-report.md` in the project root and exits with code 1 when the gate is FAIL.
-
-Options:
+The CLI writes `quality-report.md` and exits with code 1 when the gate fails.
 
 ```text
 dsh-quality run [--root path] [--timeout seconds] [--report-file path]
 ```
 
-`.dsh-quality.yaml` is optional. YAML timeouts are seconds and CLI `--timeout` values are seconds. The v0.2 Gate adds `mode`, `gate.auto_execute_missing_evidence`, and `repair` controls; see the included configuration file for defaults.
+## Library integration
 
-## Harness integration
-
-`HarnessHook` accepts generic tool-result and terminal events. Tool events only update the change ledger; the Gate runs at `agent/turn-stopping`. Events emitted by DSH Quality are ignored when they carry `metadata.source: dsh-quality`.
+`HarnessHook` accepts generic tool-result and terminal events. Map your host events to it, then connect its steering callback to the host’s actual continuation mechanism.
 
 ```ts
 const coordinator = createDefaultQualityCoordinator(config);
 const hook = new HarnessHook(
   coordinator,
   (feedback) => logger.info(feedback),
-  (feedback) => host.steerAgent(agent, feedback) // 宿主负责映射为实际 Harness 的 steering 调用
+  (feedback) => host.steerAgent(agent, feedback)
 );
+
 await hook.handle({
   type: "tools/result",
   success: true,
@@ -101,26 +144,10 @@ await hook.handle({
 await hook.handle({ type: "agent/turn-stopping", success: true, changedFiles: [], projectRoot: process.cwd() });
 ```
 
-## Architecture
-
-```text
-ChangeTracker → DeterministicPlanner → Verification Obligations
-                                       ↓
-TestEvidenceProvider → EvidenceStore → GateEvaluator → RepairController
-```
-
-The v0.2 provider, evidence, evaluator, and reporter boundaries allow future Lint, Coverage, Security, JSON, or dashboard support without changing Gate lifecycle semantics.
-
 ## Verification
 
 ```bash
 npm run typecheck
 npm test
 node dist/src/cli.js run --root examples/node
-```
-
-The included `examples/node` project demonstrates PASS; `examples/node-fail` is an intentional FAIL fixture for the feedback path:
-
-```bash
-node dist/src/cli.js run --root examples/node-fail
 ```
